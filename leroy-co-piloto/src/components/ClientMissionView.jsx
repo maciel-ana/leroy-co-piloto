@@ -23,7 +23,9 @@ import {
   ShieldAlert,
   QrCode,
   PackageCheck,
-  Replace
+  Replace,
+  RotateCcw,
+  Cpu
 } from 'lucide-react';
 
 export const ClientMissionView = ({
@@ -33,6 +35,11 @@ export const ClientMissionView = ({
   kitAtivo,
   localizacao = null,
   qrInvalido = null,
+  dadosOtimizacaoIA = null,
+  otimizandoIA = false,
+  statusOpenRouter = null,
+  onOtimizarRotaComIA,
+  onRestaurarOrdemLinear,
   onAdicionarItem,
   onRemoverItem,
   onToggleColetado,
@@ -48,6 +55,23 @@ export const ClientMissionView = ({
   const [itemSelecionadoNaoAchei, setItemSelecionadoNaoAchei] = useState(null);
   const [observacaoRuptura, setObservacaoRuptura] = useState('');
   const [mostrarMapa, setMostrarMapa] = useState(false);
+
+  const obterTagErgonomia = (categoria) => {
+    switch (categoria) {
+      case 'MATERIAIS_CONSTRUCAO':
+        return { texto: 'Base do Carrinho (Pesado)', cor: 'bg-amber-100 text-amber-900 border-amber-300' };
+      case 'HIDRAULICA':
+        return { texto: 'Carga Média / Tubos', cor: 'bg-blue-100 text-blue-900 border-blue-300' };
+      case 'TINTAS':
+        return { texto: 'Carga Líquida', cor: 'bg-teal-100 text-teal-900 border-teal-300' };
+      case 'ELETRICA':
+        return { texto: 'Topo do Carrinho (Leve)', cor: 'bg-purple-100 text-purple-900 border-purple-300' };
+      case 'FERRAMENTAS':
+        return { texto: 'Ferramenta / Compacto', cor: 'bg-slate-100 text-slate-800 border-slate-300' };
+      default:
+        return null;
+    }
+  };
 
   const estatisticas = calcularEstatisticasRota(itensRota);
 
@@ -310,6 +334,86 @@ export const ClientMissionView = ({
         )}
       </div>
 
+      {/* Painel de Otimização OpenRouter AI */}
+      <div className="bg-white via-emerald-950 to-slate-900 text-white rounded-2xl p-4 sm:p-5 shadow-sm border relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#008542] to-emerald-400 flex items-center justify-center text-white shrink-0 shadow-xs">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                {dadosOtimizacaoIA && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white">
+                    ✓ Rota Otimizada
+                  </span>
+                )}
+              </div>
+              <h3 className="text-sm sm:text-base font-bold text-leroy-darker mt-1">
+                Otimização Inteligente de Percurso & Carrinho
+              </h3>
+              <p className="text-xs text-grey2 max-w-xl mt-0.5">
+                Utiliza a API do OpenRouter para ordenar produtos pelo menor esforço físico, reduzindo passos e posicionando cargas pesadas na base do carrinho.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-start md:self-center">
+            {dadosOtimizacaoIA && (
+              <button
+                onClick={onRestaurarOrdemLinear}
+                className="text-xs font-semibold text-white hover:text-white bg-grey2 hover:bg-slate-800 px-3 py-2 min-h-[40px] rounded-xl transition-colors flex items-center gap-1.5"
+                title="Voltar para a ordem física simples dos corredores"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Restaurar Padrão
+              </button>
+            )}
+            <button
+              onClick={onOtimizarRotaComIA}
+              disabled={otimizandoIA || itensRota.length === 0}
+              className={`px-4 py-2 min-h-[40px] rounded-xl text-xs sm:text-sm font-bold text-white flex items-center gap-2 transition-all shadow-sm active:scale-95 ${
+                otimizandoIA
+                  ? 'bg-emerald-700 cursor-wait opacity-80'
+                  : 'bg-[#008542] hover:bg-[#00994C]'
+              }`}
+            >
+              <Sparkles className={`w-4 h-4 ${otimizandoIA ? 'animate-spin' : ''}`} />
+              {otimizandoIA ? 'Otimizando via OpenRouter...' : (dadosOtimizacaoIA ? 'Re-otimizar Rota' : 'Otimizar Rota com IA')}
+            </button>
+          </div>
+        </div>
+
+        {/* Detalhes da estratégia gerada pela IA */}
+        {dadosOtimizacaoIA && (
+          <div className="mt-3.5 pt-3.5 border-t border-grey2 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="md:col-span-2 bg-slate-800/60 rounded-xl p-3 border">
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-400 mb-1">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Estratégia do Trajeto ({dadosOtimizacaoIA.model}):</span>
+              </div>
+              <p className="text-xs text-slate-200 leading-relaxed">
+                {dadosOtimizacaoIA.resumoEstrategia}
+              </p>
+            </div>
+
+            <div className="bg-slate-800/60 rounded-xl p-3">
+              <span className="text-[11px] font-bold text-amber-300 block mb-1">
+                Dicas de Ergonomia e Paradas:
+              </span>
+              <ul className="text-[11px] text-slate-300 space-y-1">
+                {dadosOtimizacaoIA.dicas?.map((dica, idx) => (
+                  <li key={idx} className="flex items-start gap-1.5">
+                    <span className="text-emerald-400 font-bold shrink-0">•</span>
+                    <span>{dica}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Botão de Alternar Visualização do Mapa */}
       <div className="flex items-center justify-between">
         <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
@@ -396,6 +500,11 @@ export const ClientMissionView = ({
                         <span className="text-xs text-slate-500">
                           {item.produto.prateleira}
                         </span>
+                        {obterTagErgonomia(item.produto.categoria) && (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${obterTagErgonomia(item.produto.categoria).cor}`}>
+                            {obterTagErgonomia(item.produto.categoria).texto}
+                          </span>
+                        )}
                       </div>
 
                       {/* Nome do Produto */}

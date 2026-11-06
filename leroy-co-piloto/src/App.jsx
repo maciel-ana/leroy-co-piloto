@@ -59,6 +59,18 @@ export default function App() {
   const [chamadosFila, setChamadosFila] = useState(estadoInicial.chamadosFila);
   const [mensageriaLog, setMensageriaLog] = useState(estadoInicial.mensageriaLog);
 
+  // Integração com OpenRouter AI
+  const [dadosOtimizacaoIA, setDadosOtimizacaoIA] = useState(null);
+  const [otimizandoIA, setOtimizandoIA] = useState(false);
+  const [statusOpenRouter, setStatusOpenRouter] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/openrouter-status')
+      .then(r => r.json())
+      .then(data => setStatusOpenRouter(data))
+      .catch(err => console.warn('Status OpenRouter não disponível:', err));
+  }, []);
+
   const sincronizarFila = () => {
     setChamadosFila(filaEngine.listarFila());
     setMensageriaLog(filaEngine.getHistoricoMensageria());
@@ -79,7 +91,7 @@ export default function App() {
     salvarEstado({ cliente, vendedorAtivo, itensRota, chamadosFila, mensageriaLog, kitAtivo, localizacao });
   }, [cliente, vendedorAtivo, itensRota, chamadosFila, mensageriaLog, kitAtivo, localizacao]);
 
-  // Mantém alinhadas as abas do mesmo navegador (ex.: a aba aberta pelo QR e a do vendedor)
+  // Mantém alinhadas as abas do mesmo navegador 
   useEffect(() => assinarMudancas(aplicarEstado), []);
 
   const registrarLocalizacao = (corredor) => {
@@ -94,7 +106,7 @@ export default function App() {
     setItensRota(itens => ordenarRota(itens));
   };
 
-  // QR code: a placa do corredor abre o app com "?corredor=A03"
+  // QR code
   useEffect(() => {
     const leitura = lerCorredorDaUrl();
     if (!leitura) return;
@@ -106,7 +118,7 @@ export default function App() {
     }
   }, []);
 
-  // Sem o item na lista, ninguém precisa mais ir até o corredor
+  
   const cancelarChamadosDosItens = (itens) => {
     const fila = filaEngine.listarFila();
     itens.forEach(item => {
@@ -253,10 +265,47 @@ export default function App() {
     setCliente(c => ({ ...c, perfilProjeto: perfil }));
   };
 
+  // 10. AÇÃO: Otimizar rota com OpenRouter IA
+  const handleOtimizarRotaComIA = async () => {
+    setOtimizandoIA(true);
+    try {
+      const res = await fetch('/api/optimize-route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itens: itensRota,
+          localizacao,
+          perfilProjeto: cliente.perfilProjeto
+        })
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.itensOrdenados)) {
+        setItensRota(data.itensOrdenados);
+        setDadosOtimizacaoIA({
+          source: data.source,
+          model: data.model,
+          resumoEstrategia: data.resumoEstrategia,
+          dicas: data.dicas,
+          horario: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        });
+      }
+    } catch (err) {
+      console.error('Falha ao otimizar rota com IA:', err);
+    } finally {
+      setOtimizandoIA(false);
+    }
+  };
+
+  const handleRestaurarOrdemLinear = () => {
+    setItensRota(itens => ordenarRota(itens, localizacao?.corredor));
+    setDadosOtimizacaoIA(null);
+  };
+
   // Volta a demonstração para o início, inclusive nas outras abas
   const handleReiniciarDemonstracao = () => {
     aplicarEstado(criarEstadoInicial());
     setQrInvalido(null);
+    setDadosOtimizacaoIA(null);
     setVisaoAtiva('CLIENTE');
   };
 
@@ -283,12 +332,20 @@ export default function App() {
             kitAtivo={kitAtivo}
             localizacao={localizacao}
             qrInvalido={qrInvalido}
+            dadosOtimizacaoIA={dadosOtimizacaoIA}
+            otimizandoIA={otimizandoIA}
+            statusOpenRouter={statusOpenRouter}
+            onOtimizarRotaComIA={handleOtimizarRotaComIA}
+            onRestaurarOrdemLinear={handleRestaurarOrdemLinear}
             onAdicionarItem={handleAdicionarItem}
             onRemoverItem={handleRemoverItem}
             onToggleColetado={handleToggleColetado}
             onDispararNaoAchei={handleDispararNaoAchei}
             onResponderSubstituto={handleResponderSubstituto}
-            onCarregarListaPredefinida={handleCarregarListaPredefinida}
+            onCarregarListaPredefinida={(kit) => {
+              setDadosOtimizacaoIA(null);
+              handleCarregarListaPredefinida(kit);
+            }}
             onMudarPerfilProjeto={handleMudarPerfilProjeto}
             onLimparLocalizacao={handleLimparLocalizacao}
             onFecharQrInvalido={() => setQrInvalido(null)}
