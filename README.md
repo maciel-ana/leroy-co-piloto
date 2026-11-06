@@ -1,72 +1,45 @@
-Leroy Co-Piloto: O Waze do Varejo
+Leroy Co-Piloto: O Waze do Varejo 🛒
 
 Projeto Acadêmico / Challenge Leroy Merlin
 
 Solução ecossistêmica focada em colaboração, gamificação e conexão humana para lojas de grande formato.
 
-Sobre o Projeto
+💡 Sobre o Projeto
 
-O Leroy Co-Piloto não busca substituir o atendimento humano por telas complexas, mas sim utilizar a tecnologia para empoderar o assessor de vendas e transformar o cliente no principal auditor de estoque da loja de forma orgânica.
+O Leroy Co-Piloto utiliza a tecnologia para humanizar o atendimento, empoderando o assessor de vendas e transformando o cliente no principal auditor de estoque da loja.
 
 A solução divide-se em duas grandes experiências:
 
-Modo Missão (Cliente): Rota inteligente de compras guiada por geolocalização in-store e o botão de feedback rápido "Não Achei".
+Modo Missão (Cliente): Experiência de compra guiada por geolocalização e inteligência artificial para otimização de trajeto, além do botão de feedback rápido "Não Achei".
 
 Modo Consultor (Vendedor): Painel em tempo real com match do perfil do cliente, transformando o "apontador de prateleiras" em um consultor VIP.
 
-Identidade Visual (Leroy Merlin)
+🤖 O Papel da Inteligência Artificial
 
-O front-end do MVP foi planejado para refletir a identidade visual oficial da marca
+A inteligência artificial do sistema atua diretamente na jornada do cliente através de duas frentes principais:
 
-Stack Tecnológica e Conceitos Aplicados (MVP)
+Otimização de Rota: A IA calcula o trajeto mais eficiente dentro da loja com base na lista de compras, evitando idas e vindas desnecessárias pelos corredores.
 
-O projeto integra conceitos fundamentais aprendidos na graduação:
+Organização Inteligente de Materiais: A IA estrutura a ordem dos itens pensando na ergonomia e segurança do transporte, organizando a lista de forma inteligente — por exemplo, sugerindo recolher primeiro os materiais mais pesados (como pisos e argamassa) e por último os mais leves.
 
-Front-End:
+📍 Placas QR dos Corredores (Geolocalização In-Store)
+Para garantir precisão sem depender de GPS interno instável:
 
-React (Componentes Funcionais): Para alternar dinamicamente entre as visões do cliente e do vendedor.
+Escaneamento Rápido: Cada corredor da loja possui placas com QR Codes exclusivos.
 
-HTML5, CSS3 / SASS: Estilização modularizada e variáveis de cores.
+Recálculo Instantâneo: Ao apontar a câmera do celular para a placa do corredor, a IA recalcula a rota do cliente a partir daquele ponto exato.
 
-Bootstrap: Garantindo responsividade ágil para dispositivos móveis (smartphones dos clientes e coletores dos vendedores).
+Conexão com o Vendedor: No mesmo instante, o sistema avisa o assessor de vendas mais próximo exatamente onde o cliente se encontra, facilitando o encontro para um atendimento consultivo.
 
-Back-End e Lógica:
+🚀 Funcionalidades Principais
 
-Java (Spring Boot): Aplicação de POO (Programação Orientada a Objetos) estrita, utilizando Records para transferência de dados (DTOs) e Enumerações (Enums) para status de chamados.
+Rota Inteligente: Ordenação lógica e ergonômica dos produtos no carrinho.
 
-Estruturas de Dados: Uso de Filas (Queues) para o gerenciamento da ordem de atendimento dos chamados de ruptura e Listas Lineares para a rota inteligente.
+Crowdsourced Audit ("Não Achei"): O cliente reporta gôndolas vazias com um clique, acionando auditoria imediata.
 
-Banco de Dados e Persistência:
-
-Modelagem relacional normalizada (3ª Forma Normal) garantindo integridade referencial e cardinalidade correta (ex: Lojas, Produtos, Clientes e Vendedores).
-
-Comandos DDL e DML, além de consultas com JOINs e Agrupamentos (GROUP BY) para relatórios operacionais.
-
-Funcionalidades Principais do MVP
-
-Rota Inteligente: Ordenação lógica dos itens do carrinho baseada no mapeamento de corredores, reduzindo a fadiga do cliente.
-
-Crowdsourced Audit ("Não Achei"): O cliente reporta gôndolas vazias com um clique, gerando um evento assíncrono para o sistema.
-
-Matchmaking de Vendedores: O sistema direciona o chamado e o perfil do cliente para o assessor mais próximo, ativando o atendimento consultivo.
-
-Placas QR dos Corredores: Cada placa aponta para um link como `https://SEU-SITE/?corredor=A03`. A câmera do celular abre o link, o app registra em qual corredor o cliente está e recalcula a rota a partir dali, sem precisar de leitor dentro do app.
-
-Como usar as Placas QR
-
-Publique o site e abra a aba "Placas QR" pelo endereço publicado: os códigos usam o endereço em que a página foi aberta, então placas geradas em `localhost` não funcionam no celular. Depois é só imprimir e colar cada placa no seu corredor.
-
-Para testar com a câmera antes de publicar, rode `npm run dev`, abra no computador o endereço "Network" mostrado no terminal e leia o QR com um celular na mesma rede Wi-Fi. Para testar sem celular, use o botão "Simular leitura" de cada placa.
-
-A demonstração fica salva no navegador e é compartilhada entre as abas dele. Para voltar ao início, use "Reiniciar demonstração" no rodapé.
-
-Como publicar na Vercel
-
-Na pasta do projeto, rode `npx vercel login` e depois `npx vercel --prod`, aceitando as opções sugeridas: a Vercel detecta o Vite sozinha e o projeto não precisa de variáveis de ambiente.
-
-Gere as placas pelo domínio curto de produção (`nome-do-projeto.vercel.app`), que continua o mesmo a cada novo deploy. Não use os endereços com código aleatório: eles mudam a cada publicação e podem exigir login na Vercel. Para atualizar o site depois, rode `npx vercel --prod` de novo: as placas impressas continuam valendo.
+Matchmaking de Vendedores: O sistema direciona o chamado e o contexto do cliente para o assessor mais próximo.
 
 
-👥 Equipe
+👥 Equipe e Autoria
 
-Desenvolvimento: Projeto acadêmico desenvolvido para a entrega do semestre com foco em inovação no varejo e engenharia de software aplicada.
+Desenvolvimento: Projeto acadêmico desenvolvido para a entrega do semestre com foco em inovação no varejo físico.
