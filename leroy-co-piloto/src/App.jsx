@@ -1,0 +1,333 @@
+/**
+ * @license
+ */
+
+import React, { useEffect, useState } from 'react';
+import {
+  PRODUTOS_CATALOGO,
+  CLIENTE_DEMO,
+  VENDEDORES_DISPONIVEIS,
+  LISTAS_PREDEFINIDAS
+} from './data/mockStoreData.js';
+import { ordenarRota } from './services/routeEngine.js';
+import { FilaAtendimentoRuptura, criarChamadoRuptura, chamadoEstaAberto } from './services/queueEngine.js';
+import { carregarEstado, salvarEstado, assinarMudancas } from './services/persistencia.js';
+import { lerCorredorDaUrl, limparCorredorDaUrl } from './services/qrCorredor.js';
+import { Header } from './components/Header.jsx';
+import { ClientMissionView } from './components/ClientMissionView.jsx';
+import { SellerConsultantView } from './components/SellerConsultantView.jsx';
+import { QrPlacasView } from './components/QrPlacasView.jsx';
+
+const criarItensDaLista = (produtosSkus) =>
+  PRODUTOS_CATALOGO
+    .filter(p => produtosSkus.includes(p.sku))
+    .map((p, idx) => ({
+      id: `item-${Date.now()}-${idx}`,
+      produto: p,
+      quantidade: p.categoria === 'MATERIAIS_CONSTRUCAO' ? 3 : 1,
+      coletado: false
+    }));
+
+// Estado de partida da demonstração: kit de Reforma de Banheiro
+const criarEstadoInicial = () => {
+  const listaInicial = LISTAS_PREDEFINIDAS[0];
+  return {
+    cliente: CLIENTE_DEMO,
+    vendedorAtivo: VENDEDORES_DISPONIVEIS[0],
+    itensRota: ordenarRota(criarItensDaLista(listaInicial.produtosSkus)),
+    chamadosFila: [],
+    mensageriaLog: [],
+    kitAtivo: listaInicial.nome,
+    localizacao: null
+  };
+};
+
+export default function App() {
+  const [estadoInicial] = useState(() => carregarEstado() ?? criarEstadoInicial());
+
+  const [visaoAtiva, setVisaoAtiva] = useState('CLIENTE');
+  const [cliente, setCliente] = useState(estadoInicial.cliente);
+  const [vendedorAtivo, setVendedorAtivo] = useState(estadoInicial.vendedorAtivo);
+  const [itensRota, setItensRota] = useState(estadoInicial.itensRota);
+  const [kitAtivo, setKitAtivo] = useState(estadoInicial.kitAtivo);
+  const [localizacao, setLocalizacao] = useState(estadoInicial.localizacao);
+  const [qrInvalido, setQrInvalido] = useState(null);
+
+  const [filaEngine] = useState(
+    () => new FilaAtendimentoRuptura(estadoInicial.chamadosFila, estadoInicial.mensageriaLog)
+  );
+  const [chamadosFila, setChamadosFila] = useState(estadoInicial.chamadosFila);
+  const [mensageriaLog, setMensageriaLog] = useState(estadoInicial.mensageriaLog);
+
+  const sincronizarFila = () => {
+    setChamadosFila(filaEngine.listarFila());
+    setMensageriaLog(filaEngine.getHistoricoMensageria());
+  };
+
+  const aplicarEstado = (estado) => {
+    setCliente(estado.cliente);
+    setVendedorAtivo(estado.vendedorAtivo);
+    setItensRota(estado.itensRota);
+    setKitAtivo(estado.kitAtivo);
+    setLocalizacao(estado.localizacao);
+    filaEngine.restaurar(estado.chamadosFila, estado.mensageriaLog);
+    sincronizarFila();
+  };
+
+  // Guarda cada alteração no navegador
+  useEffect(() => {
+    salvarEstado({ cliente, vendedorAtivo, itensRota, chamadosFila, mensageriaLog, kitAtivo, localizacao });
+  }, [cliente, vendedorAtivo, itensRota, chamadosFila, mensageriaLog, kitAtivo, localizacao]);
+
+  // Mantém alinhadas as abas do mesmo navegador (ex.: a aba aberta pelo QR e a do vendedor)
+  useEffect(() => assinarMudancas(aplicarEstado), []);
+
+  const registrarLocalizacao = (corredor) => {
+    setLocalizacao({ corredor, lidoEm: new Date().toISOString() });
+    setItensRota(itens => ordenarRota(itens, corredor));
+    setQrInvalido(null);
+    setVisaoAtiva('CLIENTE');
+  };
+
+  const handleLimparLocalizacao = () => {
+    setLocalizacao(null);
+    setItensRota(itens => ordenarRota(itens));
+  };
+
+  // QR code: a placa do corredor abre o app com "?corredor=A03"
+  useEffect(() => {
+    const leitura = lerCorredorDaUrl();
+    if (!leitura) return;
+    limparCorredorDaUrl();
+    if (leitura.corredor) {
+      registrarLocalizacao(leitura.corredor);
+    } else {
+      setQrInvalido(leitura.invalido);
+    }
+  }, []);
+
+  // Sem o item na lista, ninguém precisa mais ir até o corredor
+  const cancelarChamadosDosItens = (itens) => {
+    const fila = filaEngine.listarFila();
+    itens.forEach(item => {
+      const chamado = fila.find(c => c.id === item.chamadoId);
+      if (chamado && chamadoEstaAberto(chamado)) {
+        filaEngine.atualizarStatus(chamado.id, 'CANCELADO_PELO_CLIENTE');
+      }
+    });
+    sincronizarFila();
+  };
+
+  // 1. AÇÃO: Adicionar item à Lista de Compras
+  const handleAdicionarItem = (produto) => {
+    setItensRota(itensAtuais => {
+      const novoItem = {
+        id: `item-${Date.now()}`,
+        produto,
+        quantidade: 1,
+        coletado: false
+      };
+      return ordenarRota([...itensAtuais, novoItem], localizacao?.corredor);
+    });
+  };
+
+  // 2. AÇÃO: Remover item da Lista
+  const handleRemoverItem = (itemId) => {
+    cancelarChamadosDosItens(itensRota.filter(i => i.id === itemId));
+    setItensRota(itens => itens.filter(i => i.id !== itemId));
+  };
+
+  // 3. AÇÃO: Marcar item como Coletado / Carrinho
+  const handleToggleColetado = (itemId) => {
+    setItensRota(itens =>
+      itens.map(i => i.id === itemId ? { ...i, coletado: !i.coletado } : i)
+    );
+  };
+
+  // 4. AÇÃO CRÍTICA: Botão "Não Achei"
+  const handleDispararNaoAchei = (item, observacao) => {
+    // Cria novo DTO de chamado
+    const novoChamado = criarChamadoRuptura(cliente, item.produto, observacao);
+
+    // Matchmaking automático com o vendedor mais próximo do setor
+    const vendedorSugerido = filaEngine.encontrarVendedorMaisApropriado(item.produto, VENDEDORES_DISPONIVEIS);
+    novoChamado.vendedorId = vendedorSugerido.id;
+    novoChamado.vendedorNome = vendedorSugerido.nome;
+    novoChamado.corredorCliente = localizacao?.corredor ?? null;
+
+    filaEngine.enfileirar(novoChamado);
+    sincronizarFila();
+
+    // A visão do vendedor abre em quem recebeu o chamado
+    setVendedorAtivo(vendedorSugerido);
+
+    // Atualiza status do item na rota do cliente
+    setItensRota(itens =>
+      itens.map(i => i.id === item.id ? {
+        ...i,
+        statusRuptura: 'AGUARDANDO_FILA',
+        chamadoId: novoChamado.id,
+        observacao
+      } : i)
+    );
+  };
+
+  // 5. AÇÃO: Atualizar status do chamado pelo vendedor
+  const handleAtualizarStatusChamado = (chamadoId, novoStatus) => {
+    const chamadoAtualizado = filaEngine.atualizarStatus(chamadoId, novoStatus, vendedorAtivo);
+    sincronizarFila();
+
+    // Se o chamado foi resolvido (estoque achado ou estoque vazio reportado no ERP)
+    if (chamadoAtualizado) {
+      setItensRota(itens =>
+        itens.map(i => {
+          if (i.chamadoId === chamadoId) {
+            return {
+              ...i,
+              statusRuptura: novoStatus,
+              coletado: novoStatus === 'CONCLUIDO_ESTOQUE_LOCALIZADO'
+            };
+          }
+          return i;
+        })
+      );
+    }
+  };
+
+  // 6. AÇÃO: Vendedor oferece um substituto ao cliente
+  const handleOferecerSubstituto = (chamadoId, substituto) => {
+    filaEngine.oferecerSubstituto(chamadoId, substituto);
+    sincronizarFila();
+  };
+
+  // 7. AÇÃO: Cliente aceita ou recusa o substituto oferecido
+  const handleResponderSubstituto = (chamadoId, aceito) => {
+    if (!aceito) {
+      filaEngine.recusarSubstituto(chamadoId);
+      sincronizarFila();
+      return;
+    }
+
+    const chamado = filaEngine.atualizarStatus(chamadoId, 'CONCLUIDO_COM_SUBSTITUTO');
+    sincronizarFila();
+    if (!chamado) return;
+
+    const substituto = chamado.produtoSubstitutoSugerido;
+    setItensRota(itens => {
+      const original = itens.find(i => i.chamadoId === chamadoId);
+      if (!original) return itens;
+
+      const restantes = itens.filter(i => i.id !== original.id);
+      const jaNaLista = restantes.some(i => i.produto.id === substituto.id);
+      const atualizados = jaNaLista
+        ? restantes.map(i => i.produto.id === substituto.id
+            ? { ...i, quantidade: i.quantidade + original.quantidade }
+            : i)
+        : [...restantes, {
+            id: `item-${Date.now()}`,
+            produto: substituto,
+            quantidade: original.quantidade,
+            coletado: false,
+            substituiuProduto: original.produto.nome
+          }];
+
+      return ordenarRota(atualizados, localizacao?.corredor);
+    });
+  };
+
+  // 8. AÇÃO: Desenfileirar primeiro chamado da fila
+  const handleDesenfileirarPrimeiro = () => {
+    filaEngine.desenfileirar();
+    sincronizarFila();
+  };
+
+  // 9. AÇÃO: Carregar lista pré-definida de exemplo
+  const handleCarregarListaPredefinida = (kit) => {
+    cancelarChamadosDosItens(itensRota);
+    setItensRota(ordenarRota(criarItensDaLista(kit.produtosSkus), localizacao?.corredor));
+    setCliente(c => ({ ...c, perfilProjeto: kit.perfil }));
+    setKitAtivo(kit.nome);
+  };
+
+  const handleMudarPerfilProjeto = (perfil) => {
+    setCliente(c => ({ ...c, perfilProjeto: perfil }));
+  };
+
+  // Volta a demonstração para o início, inclusive nas outras abas
+  const handleReiniciarDemonstracao = () => {
+    aplicarEstado(criarEstadoInicial());
+    setQrInvalido(null);
+    setVisaoAtiva('CLIENTE');
+  };
+
+  // Apenas chamados ativos que estão realmente aguardando ou em atendimento pelo vendedor
+  const totalFila = chamadosFila.filter(chamadoEstaAberto).length;
+
+  return (
+    <div className="min-h-screen bg-[#F4F4F4] print:bg-white text-slate-800 flex flex-col">
+      {/* Top Bar  */}
+      <Header
+        visaoAtiva={visaoAtiva}
+        onMudarVisao={setVisaoAtiva}
+        totalFila={totalFila}
+      />
+
+      {/* Conteúdo Principal */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 print:p-0">
+        {/* Visão do Cliente  */}
+        {visaoAtiva === 'CLIENTE' && (
+          <ClientMissionView
+            itensRota={itensRota}
+            chamadosAtivos={chamadosFila}
+            cliente={cliente}
+            kitAtivo={kitAtivo}
+            localizacao={localizacao}
+            qrInvalido={qrInvalido}
+            onAdicionarItem={handleAdicionarItem}
+            onRemoverItem={handleRemoverItem}
+            onToggleColetado={handleToggleColetado}
+            onDispararNaoAchei={handleDispararNaoAchei}
+            onResponderSubstituto={handleResponderSubstituto}
+            onCarregarListaPredefinida={handleCarregarListaPredefinida}
+            onMudarPerfilProjeto={handleMudarPerfilProjeto}
+            onLimparLocalizacao={handleLimparLocalizacao}
+            onFecharQrInvalido={() => setQrInvalido(null)}
+          />
+        )}
+
+        {/* Visão do Vendedor */}
+        {visaoAtiva === 'VENDEDOR' && (
+          <SellerConsultantView
+            chamadosFila={chamadosFila}
+            vendedorAtivo={vendedorAtivo}
+            mensageriaLog={mensageriaLog}
+            onTrocarVendedor={setVendedorAtivo}
+            onAtualizarStatusChamado={handleAtualizarStatusChamado}
+            onOferecerSubstituto={handleOferecerSubstituto}
+            onDesenfileirarPrimeiro={handleDesenfileirarPrimeiro}
+          />
+        )}
+
+        {/* Placas QR dos corredores */}
+        {visaoAtiva === 'PLACAS' && (
+          <QrPlacasView onSimularLeitura={registrarLocalizacao} />
+        )}
+      </main>
+
+      {/* Rodapé */}
+      <footer className="flex justify-center border-t border-slate-200 bg-white py-4 px-6 text-center text-xs text-slate-500 print:hidden">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4">
+          <span>
+            Leroy Co-Piloto © 2026
+          </span>
+          <button
+            onClick={handleReiniciarDemonstracao}
+            className="font-semibold text-slate-600 hover:text-slate-900 underline underline-offset-2 px-2 py-1"
+          >
+            Reiniciar demonstração
+          </button>
+        </div>
+      </footer>
+    </div>
+  );
+}

@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-leroy-green: #5AB539;
+  --color-assistente: #96E5BF;
+  --color-leroy-dark: #006528;
+  --color-leroy-darker: #005321;
+  --color-leroy-light: #DEFBEC;
+  --color-leroy-hover: #00994C;
+  --color-white-leroy: #F9FBFD;
+  --color-grey: #EBEFF5;
+  --color-grey2: #94A3B8;
+}
+
+/* Placas QR: folha padrão no Brasil */
+@page {
+  size: A4;
+  margin: 1cm;
+}
+
+:root {
+  --leroy-green: #008542;
+}
+

@@ -1,0 +1,6 @@
+{
+  "name": "Leroy Co-Piloto",
+  "description": "MVP do Leroy Co-Piloto: Encontre produtos na loja física por rota inteligente e conecte rupturas de gôndola diretamente ao vendedor em tempo real.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
