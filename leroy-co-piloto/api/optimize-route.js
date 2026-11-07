@@ -63,9 +63,19 @@ function ordenarRotaComErgonomia(itensPendentes, corredorAtual) {
   });
 }
 
+const corredoresDe = (itens) => [...new Set(itens.map(i => i.produto.corredor))];
+
+// O cliente já está no corredor do QR: os itens dali vêm primeiro, seja qual for a ordem da IA
+function comecarPeloCorredorAtual(rota, corredorAtual) {
+  if (!corredorAtual) return rota;
+  return [
+    ...rota.filter(i => i.produto.corredor === corredorAtual),
+    ...rota.filter(i => i.produto.corredor !== corredorAtual)
+  ];
+}
+
 // Resumo e dicas escritos a partir da rota calculada, para só citar o que existe nela
 function descreverRotaLocal(rota, corredorAtual) {
-  const corredoresDe = (itens) => [...new Set(itens.map(i => i.produto.corredor))];
   const trajeto = corredoresDe(rota).join(' → ');
   const pesados = rota.filter(i => classificarCarga(i.produto) === 'PESADA');
   const corredoresPesados = corredoresDe(pesados).join(', ');
@@ -149,12 +159,13 @@ ESTRUTURA DA LOJA LEROY MERLIN:
 Todos os corredores dão acesso à Circulação Central.
 
 CRITÉRIOS OBRIGATÓRIOS:
-1. Ponto de Início: Se "corredorAtual" for informado, o cliente já está nele; comece por itens nesse corredor ou no corredor adjacente mais próximo. Se for nulo, comece pela entrada da loja (Setor A/B).
+1. Ponto de Início: Se "corredorAtual" for informado, o cliente já está nele; comece por itens nesse corredor ou no corredor adjacente mais próximo. Este critério tem prioridade sobre a ergonomia: itens do corredor atual vêm primeiro, mesmo que haja itens mais pesados em outro corredor. Se for nulo, comece pela entrada da loja (Setor A/B).
 2. Agrupamento: Nunca faça o cliente ir e voltar entre setores opostos (ex: Setor A para D e depois voltar para A). Agrupe itens do mesmo corredor e do mesmo setor.
 3. Ergonomia do Carrinho:
    - Materiais pesados (argamassas 20kg, latas de tinta 18L, tubos de 3m) devem ser carregados primeiro para ficar no fundo do carrinho.
    - Itens leves, pequenos ou frágeis (lâmpadas LED, trenas, disjuntores, acabamentos) devem ser coletados por último para não serem danificados ou soterrados no carrinho.
-4. Responda ESTRITAMENTE em formato JSON compatível:
+4. Coerência do texto: "resumoEstrategia" e "dicas" devem descrever exatamente a sequência devolvida, citando os corredores na mesma ordem. Nunca recomende uma ordem diferente; se os itens pesados vierem depois, oriente a deixar espaço para eles no fundo do carrinho.
+5. Responda ESTRITAMENTE em formato JSON compatível:
 {
   "sequenciaItemIds": ["id1", "id2", ...],
   "resumoEstrategia": "Breve resumo amigável em 1 ou 2 frases da estratégia adotada.",
@@ -236,15 +247,25 @@ CRITÉRIOS OBRIGATÓRIOS:
                 ? parsed.dicas.filter(dica => typeof dica === 'string' && dica.trim())
                 : [];
 
+              const rotaFinal = comecarPeloCorredorAtual(reordenados, corredorAtual);
+              // Se a ordem mudou aqui, o texto da IA descreve outro trajeto e não pode ir para a tela
+              const ordemAjustada = rotaFinal.some((item, indice) => item !== reordenados[indice]);
+
+              const resumoDaIA = typeof parsed.resumoEstrategia === 'string' && parsed.resumoEstrategia.trim()
+                ? parsed.resumoEstrategia
+                : 'Trajeto reordenado pela IA com foco em menor deslocamento e ergonomia de carga.';
+
               return res.status(200).json({
                 success: true,
                 source: 'openrouter',
                 model: completion.model || model,
-                itensOrdenados: [...coletados, ...reordenados],
-                resumoEstrategia: typeof parsed.resumoEstrategia === 'string' && parsed.resumoEstrategia.trim()
-                  ? parsed.resumoEstrategia
-                  : 'Trajeto reordenado pela IA com foco em menor deslocamento e ergonomia de carga.',
-                dicas: dicasDaIA.length > 0 ? dicasDaIA : descreverRotaLocal(reordenados, corredorAtual).dicas
+                itensOrdenados: [...coletados, ...rotaFinal],
+                resumoEstrategia: ordemAjustada
+                  ? `Partindo do Corredor ${corredorAtual}, onde você já está, a rota segue: ${corredoresDe(rotaFinal).join(' → ')}.`
+                  : resumoDaIA,
+                dicas: !ordemAjustada && dicasDaIA.length > 0
+                  ? dicasDaIA
+                  : descreverRotaLocal(rotaFinal, corredorAtual).dicas
               });
             }
           }
