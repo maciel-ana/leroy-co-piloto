@@ -2,7 +2,7 @@
  * @license
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   PRODUTOS_CATALOGO,
   CLIENTE_DEMO,
@@ -38,7 +38,8 @@ const criarEstadoInicial = () => {
     chamadosFila: [],
     mensageriaLog: [],
     kitAtivo: listaInicial.nome,
-    localizacao: null
+    localizacao: null,
+    dadosOtimizacaoIA: null
   };
 };
 
@@ -60,9 +61,11 @@ export default function App() {
   const [mensageriaLog, setMensageriaLog] = useState(estadoInicial.mensageriaLog);
 
   // Integração com OpenRouter AI
-  const [dadosOtimizacaoIA, setDadosOtimizacaoIA] = useState(null);
+  const [dadosOtimizacaoIA, setDadosOtimizacaoIA] = useState(estadoInicial.dadosOtimizacaoIA ?? null);
   const [otimizandoIA, setOtimizandoIA] = useState(false);
+  const [erroOtimizacaoIA, setErroOtimizacaoIA] = useState(null);
   const [statusOpenRouter, setStatusOpenRouter] = useState(null);
+  const pedidoOtimizacao = useRef(0);
 
   useEffect(() => {
     fetch('/api/openrouter-status')
@@ -82,19 +85,29 @@ export default function App() {
     setItensRota(estado.itensRota);
     setKitAtivo(estado.kitAtivo);
     setLocalizacao(estado.localizacao);
+    setDadosOtimizacaoIA(estado.dadosOtimizacaoIA ?? null);
     filaEngine.restaurar(estado.chamadosFila, estado.mensageriaLog);
     sincronizarFila();
   };
 
   // Guarda cada alteração no navegador
   useEffect(() => {
-    salvarEstado({ cliente, vendedorAtivo, itensRota, chamadosFila, mensageriaLog, kitAtivo, localizacao });
-  }, [cliente, vendedorAtivo, itensRota, chamadosFila, mensageriaLog, kitAtivo, localizacao]);
+    salvarEstado({ cliente, vendedorAtivo, itensRota, chamadosFila, mensageriaLog, kitAtivo, localizacao, dadosOtimizacaoIA });
+  }, [cliente, vendedorAtivo, itensRota, chamadosFila, mensageriaLog, kitAtivo, localizacao, dadosOtimizacaoIA]);
 
   // Mantém alinhadas as abas do mesmo navegador 
   useEffect(() => assinarMudancas(aplicarEstado), []);
 
+  // A lista ou a ordem mudou: o resultado anterior não descreve mais a rota,
+  // e uma resposta ainda a caminho também perde a validade
+  const descartarOtimizacao = () => {
+    pedidoOtimizacao.current += 1;
+    setDadosOtimizacaoIA(null);
+    setErroOtimizacaoIA(null);
+  };
+
   const registrarLocalizacao = (corredor) => {
+    descartarOtimizacao();
     setLocalizacao({ corredor, lidoEm: new Date().toISOString() });
     setItensRota(itens => ordenarRota(itens, corredor));
     setQrInvalido(null);
@@ -102,6 +115,7 @@ export default function App() {
   };
 
   const handleLimparLocalizacao = () => {
+    descartarOtimizacao();
     setLocalizacao(null);
     setItensRota(itens => ordenarRota(itens));
   };
@@ -132,6 +146,7 @@ export default function App() {
 
   // 1. AÇÃO: Adicionar item à Lista de Compras
   const handleAdicionarItem = (produto) => {
+    descartarOtimizacao();
     setItensRota(itensAtuais => {
       const novoItem = {
         id: `item-${Date.now()}`,
@@ -145,6 +160,7 @@ export default function App() {
 
   // 2. AÇÃO: Remover item da Lista
   const handleRemoverItem = (itemId) => {
+    descartarOtimizacao();
     cancelarChamadosDosItens(itensRota.filter(i => i.id === itemId));
     setItensRota(itens => itens.filter(i => i.id !== itemId));
   };
@@ -224,6 +240,7 @@ export default function App() {
     sincronizarFila();
     if (!chamado) return;
 
+    descartarOtimizacao();
     const substituto = chamado.produtoSubstitutoSugerido;
     setItensRota(itens => {
       const original = itens.find(i => i.chamadoId === chamadoId);
@@ -255,6 +272,7 @@ export default function App() {
 
   // 9. AÇÃO: Carregar lista pré-definida de exemplo
   const handleCarregarListaPredefinida = (kit) => {
+    descartarOtimizacao();
     cancelarChamadosDosItens(itensRota);
     setItensRota(ordenarRota(criarItensDaLista(kit.produtosSkus), localizacao?.corredor));
     setCliente(c => ({ ...c, perfilProjeto: kit.perfil }));
@@ -265,9 +283,11 @@ export default function App() {
     setCliente(c => ({ ...c, perfilProjeto: perfil }));
   };
 
-  // 10. AÇÃO: Otimizar rota com OpenRouter IA
+  // 10. AÇÃO: Otimizar a rota (com IA se o servidor tiver a chave, senão por regras)
   const handleOtimizarRotaComIA = async () => {
+    const pedido = ++pedidoOtimizacao.current;
     setOtimizandoIA(true);
+    setErroOtimizacaoIA(null);
     try {
       const res = await fetch('/api/optimize-route', {
         method: 'POST',
@@ -279,33 +299,45 @@ export default function App() {
         })
       });
       const data = await res.json();
-      if (data.success && Array.isArray(data.itensOrdenados)) {
-        setItensRota(data.itensOrdenados);
-        setDadosOtimizacaoIA({
-          source: data.source,
-          model: data.model,
-          resumoEstrategia: data.resumoEstrategia,
-          dicas: data.dicas,
-          horario: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-        });
+      if (!res.ok || !data.success || !Array.isArray(data.itensOrdenados)) {
+        throw new Error(data.error || `Resposta inesperada do servidor (${res.status})`);
       }
+      if (pedido !== pedidoOtimizacao.current) return;
+
+      // Aplica só a ordem: o que o cliente marcou durante a espera continua valendo
+      setItensRota(itensAtuais => {
+        const itemPorId = new Map(itensAtuais.map(i => [i.id, i]));
+        const ordenados = data.itensOrdenados.map(i => itemPorId.get(i.id)).filter(Boolean);
+        const idsOrdenados = new Set(ordenados.map(i => i.id));
+        return [...ordenados, ...itensAtuais.filter(i => !idsOrdenados.has(i.id))];
+      });
+      setDadosOtimizacaoIA({
+        source: data.source,
+        model: data.model,
+        resumoEstrategia: data.resumoEstrategia,
+        dicas: data.dicas,
+        horario: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      });
     } catch (err) {
-      console.error('Falha ao otimizar rota com IA:', err);
+      console.error('Falha ao otimizar rota:', err);
+      if (pedido === pedidoOtimizacao.current) {
+        setErroOtimizacaoIA('Não foi possível otimizar a rota agora. Sua lista continua na ordem atual.');
+      }
     } finally {
       setOtimizandoIA(false);
     }
   };
 
   const handleRestaurarOrdemLinear = () => {
+    descartarOtimizacao();
     setItensRota(itens => ordenarRota(itens, localizacao?.corredor));
-    setDadosOtimizacaoIA(null);
   };
 
   // Volta a demonstração para o início, inclusive nas outras abas
   const handleReiniciarDemonstracao = () => {
+    descartarOtimizacao();
     aplicarEstado(criarEstadoInicial());
     setQrInvalido(null);
-    setDadosOtimizacaoIA(null);
     setVisaoAtiva('CLIENTE');
   };
 
@@ -334,6 +366,7 @@ export default function App() {
             qrInvalido={qrInvalido}
             dadosOtimizacaoIA={dadosOtimizacaoIA}
             otimizandoIA={otimizandoIA}
+            erroOtimizacaoIA={erroOtimizacaoIA}
             statusOpenRouter={statusOpenRouter}
             onOtimizarRotaComIA={handleOtimizarRotaComIA}
             onRestaurarOrdemLinear={handleRestaurarOrdemLinear}
@@ -342,10 +375,7 @@ export default function App() {
             onToggleColetado={handleToggleColetado}
             onDispararNaoAchei={handleDispararNaoAchei}
             onResponderSubstituto={handleResponderSubstituto}
-            onCarregarListaPredefinida={(kit) => {
-              setDadosOtimizacaoIA(null);
-              handleCarregarListaPredefinida(kit);
-            }}
+            onCarregarListaPredefinida={handleCarregarListaPredefinida}
             onMudarPerfilProjeto={handleMudarPerfilProjeto}
             onLimparLocalizacao={handleLimparLocalizacao}
             onFecharQrInvalido={() => setQrInvalido(null)}

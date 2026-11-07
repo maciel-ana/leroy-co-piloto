@@ -12,7 +12,8 @@ import { chamadoEstaAberto } from '../services/queueEngine.js';
 export const StoreMapVisualizer = ({
   itensRota = [],
   chamadosAtivos = [],
-  localizacao = null
+  localizacao = null,
+  rotaOtimizada = false
 }) => {
   const itensPendentes = itensRota.filter(i => !i.coletado);
 
@@ -45,7 +46,9 @@ export const StoreMapVisualizer = ({
             Planta Baixa Esquemática da Loja
           </h3>
           <p className="text-[11px] sm:text-xs text-slate-500">
-            {localizacao
+            {rotaOtimizada
+              ? 'Trajeto na ordem otimizada da sua lista'
+              : localizacao
               ? `Rota calculada a partir do Corredor ${localizacao.corredor}, sempre para o item mais próximo`
               : 'Trajeto linear ordenado por proximidade física dos corredores (A → B → C → D)'}
           </p>
