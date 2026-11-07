@@ -1,0 +1,11 @@
+# Copie este arquivo para db.properties (na mesma pasta) e preencha.
+# O db.properties está no .gitignore: a senha não vai para o GitHub.
+
+# Oracle da FIAP
+db.url=jdbc:oracle:thin:@oracle.fiap.com.br:1521:ORCL
+
+# Seu usuário do Oracle da FIAP (o mesmo do SQL Developer, ex.: RM123456)
+db.usuario=
+
+# Senha do Oracle da FIAP
+db.senha=
